@@ -1,0 +1,58 @@
+# Auto-generated — AI STV (encrypted)
+name: AI STV Ubuntu VM
+on:
+  workflow_dispatch:
+jobs:
+  aistv-ubuntu:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        instance_id: [1]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+          which tailscale && tailscale version
+      - name: Kết nối Tailscale và gắn Tag bảo mật
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          INSTANCE_ID: ${{ matrix.instance_id }}
+        run: |
+          TS_RUN_ID="${{ github.run_id }}"
+          JITTER=$(( RANDOM % 3 + 1 ))
+          echo "Tailscale stagger: ${JITTER}s"
+          sleep $JITTER
+          sudo tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="STV-UBU-$TS_RUN_ID" --advertise-tags=tag:vps --accept-routes=false --accept-dns=false --timeout=60s 2>&1
+          unset TAILSCALE_AUTH_KEY
+      - name: AI STV Ubuntu Provision
+        timeout-minutes: 25
+        env:
+          INSTANCE_ID: ${{ matrix.instance_id }}
+          MACHINE_COUNT: '1'
+          VM_DURATION_MINUTES: '15'
+        run: |
+          set -e
+          B64="${{ secrets.VM_PROVISION_SCRIPT }}"
+          SCRIPT=$(echo "$B64" | base64 -d 2>/dev/null || echo "$B64" | python3 -c "import sys,base64; print(base64.b64decode(sys.stdin.read()).decode())")
+          eval "$SCRIPT"
+      - name: Upload VM credentials
+        uses: actions/upload-artifact@v4
+        with:
+          name: aistv-creds-${{ matrix.instance_id }}
+          path: vm-creds.json
+          if-no-files-found: warn
+          retention-days: 1
+      - name: AI STV Ubuntu Keep-Alive
+        env:
+          INSTANCE_ID: ${{ matrix.instance_id }}
+          MACHINE_COUNT: '1'
+          VM_DURATION_MINUTES: '15'
+        run: |
+          set -e
+          B64="${{ secrets.VM_KEEPALIVE_SCRIPT }}"
+          SCRIPT=$(echo "$B64" | base64 -d 2>/dev/null || echo "$B64" | python3 -c "import sys,base64; print(base64.b64decode(sys.stdin.read()).decode())")
+          eval "$SCRIPT"
